@@ -1,0 +1,151 @@
+library(dplyr)
+library(ggplot2)
+library(circlize)
+
+dataa <- read.csv("dataHistoryFull.csv")
+
+# Menemukan jumlah owner yang pernah tercatat pada NOP tertentu
+names(dataa)[1] <- 'nop'
+dataa <- dataa %>% filter(nchar(nop) == 18)
+nop_moved <- dataa %>% 
+    distinct(nop, NM_WP_SPPT) %>% 
+    group_by(nop) %>% 
+    count()
+names(nop_moved)[2]<- 'n_owner'
+
+# Mencari data nop, owner, dan tahun awal dan akhir SPPT
+
+data_moved <- left_join(dataa, nop_moved)
+
+d21 <- data_moved %>% 
+    filter(THN_PAJAK_SPPT == 2021) %>% 
+    distinct(nop) %>% 
+    mutate(stat1 = 1)
+
+# mengambil tahun pertama
+dts <- data_moved %>% 
+    arrange(nop, THN_PAJAK_SPPT) %>% 
+    group_by(nop, NM_WP_SPPT) %>% 
+    filter(row_number()==1)
+
+names(dts)[9] <- 'THN_PAJAK_SPPT_AWAL'
+
+# mengabil tahun terakhir
+dts1 <- data_moved %>% 
+    arrange(nop, -THN_PAJAK_SPPT) %>% 
+    group_by(nop, NM_WP_SPPT) %>% 
+    filter(row_number()==1)
+
+names(dts1)[9] <- 'THN_PAJAK_SPPT_AKHIR'
+
+dts <- dts %>% select(nop, NM_WP_SPPT, THN_PAJAK_SPPT_AWAL)
+
+colorder <- c('nop','NM_WP_SPPT','n_owner','THN_PAJAK_SPPT_AWAL','THN_PAJAK_SPPT_AKHIR','KD_PROPINSI','KD_DATI2','KD_KECAMATAN','KD_KELURAHAN','KD_BLOK','NO_URUT','KD_JNS_OP','JLN_WP_SPPT','BLOK_KAV_NO_WP_SPPT','RW_WP_SPPT','RT_WP_SPPT','KELURAHAN_WP_SPPT','KOTA_WP_SPPT','KD_POS_WP_SPPT','NPWP_SPPT','LUAS_BUMI_SPPT','LUAS_BNG_SPPT','TGL_JATUH_TEMPO_SPPT','TERUTANG_SPPT','STATUS_PEMBAYARAN_SPPT','PEMBAYARAN_SPPT_KE','KD_KANWIL_BANK','KD_KPPBB_BANK','KD_BANK_TUNGGAL','KD_BANK_PERSEPSI','KD_TP','POKOK_SPPT','DENDA_SPPT','JML_SPPT_YG_DIBAYAR','TGL_PEMBAYARAN_SPPT','TGL_REKAM_BYR_SPPT')
+dtss <- left_join(dts1, dts)
+dtss <- dtss[, colorder]
+dtss <- mutate(dtss, nop = sub('.{2}', 'AA', nop)) %>% 
+    arrange(nop, THN_PAJAK_SPPT_AWAL)
+write.csv(dtss, "dataowner.csv", row.names = F)
+
+
+# Mencari NOP yang berpindah tangan
+
+dtss <- read.csv("dataowner1.csv")
+names(dtss)[1] <- "nop"
+dtss <- dtss %>% 
+    arrange(NM_WP_SPPT, nop, THN_PAJAK_SPPT_AWAL) %>% 
+    filter(NM_WP_SPPT != "",
+           NM_WP_SPPT != "( SAWAH TREM ) MILIK DESA")
+
+
+result <- data.frame(NM_WP_SPPT = rep(NA, 12000), 
+                     nop_asal = rep(NA, 12000), 
+                     rentang_waktu_asal = rep(NA, 12000), 
+                     nop_tujuan = rep(NA, 12000), 
+                     rentang_waktu_tujuan = rep(NA, 12000))
+
+
+k = result %>% filter(!is.na(NM_WP_SPPT)) %>% nrow() + 1
+dta <- dtss[120014:nrow(dtss), ]
+while (nrow(dta) > 0){
+    
+    dta <- arrange(dta, NM_WP_SPPT, THN_PAJAK_SPPT_AWAL,nop)
+    NM_WP_SPPT1 = dta$NM_WP_SPPT[1]
+    nop1 = dta$nop[1]
+    THN_PAJAK_SPPT_AWAL1 = dta$THN_PAJAK_SPPT_AWAL[1]
+    THN_PAJAK_SPPT_AKHIR1 = dta$THN_PAJAK_SPPT_AKHIR[1]
+    iter = TRUE
+    #print(301-nrow(dta))
+    #
+    while(iter){
+        #k =k + 1
+        iter = FALSE
+        filtered <- filter(dta, NM_WP_SPPT == NM_WP_SPPT1) %>% 
+            arrange(THN_PAJAK_SPPT_AWAL, nop)
+        
+        if(nrow(filtered) > 1){
+            
+            #print(filtered$NM_WP_SPPT)
+            remove <- TRUE
+            for (i in 2:nrow(filtered)){
+                
+                
+                iter = FALSE
+                if(THN_PAJAK_SPPT_AKHIR1 < filtered$THN_PAJAK_SPPT_AWAL[i]){
+                    #print(filtered)
+                    if (k %% 100 == 0) 
+                        print(k)
+                    result$NM_WP_SPPT[k] = NM_WP_SPPT1
+                    result$nop_asal[k] = nop1
+                    result$rentang_waktu_asal[k] = paste(THN_PAJAK_SPPT_AWAL1, "-", 
+                                                         THN_PAJAK_SPPT_AKHIR1)
+                    result$nop_tujuan[k] = filtered$nop[i]
+                    result$rentang_waktu_tujuan[k]= paste(filtered$THN_PAJAK_SPPT_AWAL[i], "-", 
+                                                          filtered$THN_PAJAK_SPPT_AKHIR[i])
+                    k = k + 1
+                    dta <- dta %>% filter(!(nop == nop1 & 
+                                                NM_WP_SPPT == NM_WP_SPPT1 &
+                                                THN_PAJAK_SPPT_AWAL == THN_PAJAK_SPPT_AWAL1 &
+                                                THN_PAJAK_SPPT_AKHIR == THN_PAJAK_SPPT_AKHIR1))
+                    
+                    nop1 = filtered$nop[i]
+                    THN_PAJAK_SPPT_AWAL1 = filtered$THN_PAJAK_SPPT_AWAL[i]
+                    THN_PAJAK_SPPT_AKHIR1 = filtered$THN_PAJAK_SPPT_AKHIR[i] 
+                    filtered <- filter(dta, NM_WP_SPPT == NM_WP_SPPT1) %>% 
+                        arrange(THN_PAJAK_SPPT_AWAL, nop)
+                    if(nrow(filtered) > 1){
+                        iter = TRUE
+                        #print(filtered)
+                    }
+                                       
+                    remove <- FALSE
+                    break
+                } 
+            }
+            #if (k == 2)
+            #print(aasda)
+            if (remove) {
+                #iter = FALSE
+                dta <- dta %>% filter(!(nop == nop1 & 
+                                            NM_WP_SPPT == NM_WP_SPPT1 &
+                                            THN_PAJAK_SPPT_AWAL == THN_PAJAK_SPPT_AWAL1 &
+                                            THN_PAJAK_SPPT_AKHIR == THN_PAJAK_SPPT_AKHIR1))
+            }
+            
+        } else {
+            dta <- dta %>% filter(!(nop == nop1 & 
+                                        NM_WP_SPPT == NM_WP_SPPT1 &
+                                        THN_PAJAK_SPPT_AWAL == THN_PAJAK_SPPT_AWAL1 &
+                                        THN_PAJAK_SPPT_AKHIR == THN_PAJAK_SPPT_AKHIR1))
+            #iter = FALSE
+        }
+    }
+    dta <- dta %>% filter(!(nop == nop1 & 
+                                NM_WP_SPPT == NM_WP_SPPT1 &
+                                THN_PAJAK_SPPT_AWAL == THN_PAJAK_SPPT_AWAL1 &
+                                THN_PAJAK_SPPT_AKHIR == THN_PAJAK_SPPT_AKHIR1))
+}
+
+result %>% filter(!is.na(NM_WP_SPPT)) %>% write.csv("perpindahan_nop.csv", row.names = F)
+write.csv(result, "perpindahan_nop.csv", row.names = F)
+rs <- read.csv("perpindahan_nop.csv")
