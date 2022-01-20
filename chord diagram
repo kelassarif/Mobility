@@ -1,0 +1,68 @@
+library(dplyr)
+library(ggplot2)
+library(circlize)
+
+dataa <- read.csv("dataHistoryFull.csv")
+# Visualisasi
+
+rs <- read.csv("perpindahan_nop.csv")
+rs <- rs %>% mutate(KD_KECAMATAN_ASAL = as.integer(substr(nop_asal, 6, 7)),
+                    KD_KELURAHAN_ASAL = as.integer(substr(nop_asal, 8, 10)),
+                    KD_KECAMATAN_TUJUAN = as.integer(substr(nop_tujuan, 6, 7)),
+                    KD_KELURAHAN_TUJUAN = as.integer(substr(nop_tujuan, 8, 10))) 
+
+kode <- read.csv("kode.csv", sep = ";")
+
+rs <- left_join(rs, kode,by = c("KD_KECAMATAN_ASAL" = "KD_KECAMATAN", 
+                                "KD_KELURAHAN_ASAL" = "KD_KELURAHAN")) 
+rs <- rs[,-11]
+names(rs)[10:12] <- c("KECAMATAN_ASAL", "KELURAHAN_ASAL", "FLOOD_STATUS_ASAL")
+
+rs <- left_join(rs, kode,by = c("KD_KECAMATAN_TUJUAN" = "KD_KECAMATAN", 
+                                "KD_KELURAHAN_TUJUAN" = "KD_KELURAHAN")) 
+rs <- rs[,-14]
+names(rs)[13:15] <- c("KECAMATAN_TUJUAN", "KELURAHAN_TUJUAN", "FLOOD_STATUS_TUJUAN")
+
+rs <- rs %>% mutate(FLOOD_STATUS_ASAL = ifelse(FLOOD_STATUS_ASAL == "FLOODED",
+                                               "RISKY AREA", "SAFE AREA"),
+                    FLOOD_STATUS_TUJUAN = ifelse(FLOOD_STATUS_TUJUAN == "FLOODED",
+                                                 "RISKY AREA", "SAFE AREA"))
+
+# Ganti Kecamatan/kelurahan disini
+vizData <- rs[, c(12, 10, 15, 13)]
+
+wil = c(structure(vizData[,1], names=vizData[,2]),
+          structure(vizData[,3], names= vizData[,4]))
+wil = wil[!duplicated(names(wil))]
+wil = wil[order(wil, names(wil))]
+wil_color = structure(2:(length(unique(wil))+1), names = unique(wil))
+model_color = structure(2:(length(names(wil))+1), names = names(wil))
+
+gap.degree = do.call("c", lapply(table(wil), function(i) c(rep(2, i-1), 8)))
+circos.par(gap.degree = gap.degree)
+
+chordDiagram(vizData[, c(2, 4)], 
+             order = names(wil), 
+             grid.col = model_color,
+             directional = 1, 
+             annotationTrack = "grid", 
+             direction.type = c("arrows", "diffHeight"),
+             link.arr.type = "big.arrow",
+             preAllocateTracks = list(
+                 list(track.height = 0.02))
+)
+
+circos.trackPlotRegion(track.index = 2, panel.fun = function(x, y) {
+    xlim = get.cell.meta.data("xlim")
+    ylim = get.cell.meta.data("ylim")
+    sector.index = get.cell.meta.data("sector.index")
+    circos.text(mean(xlim), mean(ylim), sector.index, col = "white", cex = 0.6, facing = "inside", niceFacing = TRUE)
+}, bg.border = NA)
+
+for(b in unique(wil)) {
+    model = names(wil[wil == b])
+    highlight.sector(sector.index = model, track.index = 1, col = wil_color[b], 
+                     text = b, text.vjust = -1, niceFacing = TRUE)
+}
+
+circos.clear()
