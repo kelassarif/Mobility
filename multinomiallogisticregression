@@ -1,0 +1,110 @@
+---
+title: "Multinomial Logistic Regression"
+author: "SARIFFUDDIN"
+date: "03/08/2022"
+output: rmdformats::readthedown
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+require(sf)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(nnet)
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+```
+
+```{r}
+fulldt <- read.csv("datamultinom.csv")
+fulldt <- mutate(fulldt, 
+                 mig = if_else(flood_origin == 1 & flood_dest == 1, 1, 0), #risk to risk
+                 mig = if_else(flood_origin == 1 & flood_dest == 0, 2, mig), #risk to safe
+                 mig = if_else(flood_origin == 0 & flood_dest == 1, 3, mig), #safe to risk
+                 
+                 mig_cat = if_else(flood_origin == 1 & flood_dest == 1, "risk to risk", ""),
+                 mig_cat = if_else(flood_origin == 1 & flood_dest == 0, "risk to safe", mig_cat),
+                 mig_cat = if_else(flood_origin == 0 & flood_dest == 1, "safe to risk", mig_cat)
+                )
+
+```
+```{r}
+ind <- sample(2, nrow(datamlr),
+              replace = T,
+              prob = c(0.8, 0.2))
+
+training <- datamlr[ind == 1,]
+testing <- datamlr[ind == 2,]
+```
+
+## Create model
+
+```{r}
+training$mig <- relevel(training$mig, ref = "1") #Risk to Risk
+mymodel3 <- multinom(mig ~
+                        sline_origin +
+                        sline_dest +
+                        flood_origin +
+                        flood_dest +
+                        subsidence_origin +
+                        subsidence_dest +
+                        slope_origin +
+                        slope_dest +
+                        exp_origin +
+                        elect_origin +
+                        elect_dest, 
+                    data = training)
+summary(mymodel3)
+```
+
+## P-value
+
+```{r}
+chi <- summary(mymodel3)$coefficients/summary(mymodel3)$standard.errors
+pvalue <- pchisq(chi, 7)
+pvalue
+```
+
+Significant if p-value < 0.05
+
+## Confusion matrix
+
+### Training
+
+```{r}
+pred <- predict(mymodel3, training)
+tab <- table(pred, training$mig)
+tab
+accuration <- sum(diag(tab))/sum(tab)
+accuration
+list_acc_training <- c(list_acc_training, accuration)
+```
+
+### Testing
+
+```{r}
+testing$mig <- relevel(testing$mig, ref = "1")
+predtes <- predict(mymodel3, testing)
+tabtes <- table(predtes, testing$mig)
+tabtes
+accuration <- sum(diag(tabtes))/sum(tabtes)
+accuration
+list_acc_testing <- c(list_acc_testing, accuration)
+```
+
+## Confidence Interval
+
+```{r}
+confint(mymodel3)
+```
+
+## Odds Ratio
+
+```{r}
+exp(coef(mymodel3))
+```
